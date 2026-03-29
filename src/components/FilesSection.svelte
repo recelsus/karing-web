@@ -13,12 +13,34 @@
   export let on_toggle_swap: (id: number) => void;
   export let swap_ready = false;
   export let on_swap: () => void;
+  export let on_open_upload: () => void;
+  export let upload_in_progress = false;
+  export let upload_progress = 0;
 </script>
 
 <section class="file-lane" aria-label="planned file area">
   <div class="file-lane-header">
     <div class="file-lane-title-row">
       <p class="eyebrow">files</p>
+      <button
+        type="button"
+        class="icon-button ghost"
+        on:click={on_open_upload}
+        title="upload"
+        aria-label="upload file"
+        disabled={upload_in_progress}
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M12 16V5M8 9l4-4 4 4M5 19h14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
       {#if swap_ready}
         <button type="button" class="swap-button" on:click={on_swap} title="swap">
           <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
@@ -45,6 +67,9 @@
         </select>
       </label>
       <span class="file-count">{file_cards.length} files detected</span>
+      {#if upload_in_progress}
+        <span class="file-count">upload {upload_progress}%</span>
+      {/if}
     </div>
   </div>
   {#if file_cards.length > 0}

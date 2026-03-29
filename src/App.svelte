@@ -30,6 +30,9 @@
   let selected_file_swap_ids: number[] = [];
   let text_swap_target_id: number | null = null;
   let file_swap_ready = false;
+  let file_input: HTMLInputElement | null = null;
+  let upload_in_progress = false;
+  let upload_progress = 0;
   let toast_timer: ReturnType<typeof setTimeout> | null = null;
   let search_timer: ReturnType<typeof setTimeout> | null = null;
   let sort_option: sort_option_t = 'id-asc';
@@ -158,6 +161,13 @@
     return `${api_base}/?id=${record.id}&as=download`;
   }
 
+  function parse_size_mb_to_bytes(value: string | undefined) {
+    if (!value) return null;
+    const matched = value.trim().match(/^(\d+)\s*MB$/i);
+    if (!matched) return null;
+    return Number(matched[1]) * 1024 * 1024;
+  }
+
   async function parse_error(response: Response) {
     try {
       const json = await response.json();
@@ -224,6 +234,26 @@
     );
 
     return records.filter((record): record is api_record_t => record !== null);
+  }
+
+  async function fetch_file_limit_bytes() {
+    const response = await fetch(`${api_base}/health`, {
+      headers: {
+        Accept: 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(await parse_error(response));
+    }
+
+    const json = (await response.json()) as {
+      size?: {
+        file?: string;
+      };
+    };
+
+    return parse_size_mb_to_bytes(json.size?.file);
   }
 
   async function create_slot() {
@@ -447,6 +477,95 @@
     expanded_card_id = null;
   }
 
+  function open_upload_picker() {
+    if (upload_in_progress) return;
+    file_input?.click();
+  }
+
+  async function handle_file_input_change(event: Event) {
+    const target = event.currentTarget as HTMLInputElement;
+    const file = target.files?.[0];
+    target.value = '';
+
+    if (!file) return;
+
+    try {
+      const file_limit_bytes = await fetch_file_limit_bytes();
+      if (file_limit_bytes !== null && file.size > file_limit_bytes) {
+        show_toast('File exceeds the current upload limit.', 'error');
+        return;
+      }
+    } catch (error) {
+      show_toast(
+        error instanceof Error ? error.message : 'Failed to read upload limit.',
+        'error'
+      );
+      return;
+    }
+
+    await upload_file(file);
+  }
+
+  async function upload_file(file: File) {
+    upload_in_progress = true;
+    upload_progress = 0;
+    error_message = '';
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const form_data = new FormData();
+        form_data.append('file', file);
+        form_data.append('filename', file.name);
+        form_data.append('mime', file.type || 'application/octet-stream');
+
+        const request = new XMLHttpRequest();
+        request.open('POST', `${api_base}/`);
+        request.setRequestHeader('Accept', 'application/json');
+
+        request.upload.addEventListener('progress', (progress_event) => {
+          if (!progress_event.lengthComputable) return;
+          upload_progress = Math.round(
+            (progress_event.loaded / progress_event.total) * 100
+          );
+        });
+
+        request.addEventListener('load', async () => {
+          if (request.status >= 200 && request.status < 300) {
+            upload_progress = 100;
+            resolve();
+            return;
+          }
+
+          let message = `request failed: ${request.status}`;
+          try {
+            const parsed = JSON.parse(request.responseText) as { message?: string };
+            if (parsed.message) message = parsed.message;
+          } catch {
+            // keep fallback message
+          }
+          reject(new Error(message));
+        });
+
+        request.addEventListener('error', () => {
+          reject(new Error('Upload failed.'));
+        });
+
+        request.send(form_data);
+      });
+
+      show_toast('File uploaded.');
+      await load_slots();
+    } catch (error) {
+      show_toast(
+        error instanceof Error ? error.message : 'Upload failed.',
+        'error'
+      );
+    } finally {
+      upload_in_progress = false;
+      upload_progress = 0;
+    }
+  }
+
   function queue_search() {
     if (search_timer) clearTimeout(search_timer);
     search_timer = setTimeout(() => {
@@ -520,6 +639,9 @@
     on_toggle_swap={toggle_file_swap_selection}
     swap_ready={file_swap_ready}
     on_swap={() => swap_selected('file')}
+    on_open_upload={open_upload_picker}
+    {upload_in_progress}
+    {upload_progress}
   />
 
   <ExpandedEditorModal
@@ -537,4 +659,11 @@
   />
 
   <ToastMessage message={status_message} kind={toast_kind} />
+
+  <input
+    bind:this={file_input}
+    type="file"
+    hidden
+    on:change={handle_file_input_change}
+  />
 </main>
