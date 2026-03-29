@@ -1,0 +1,31 @@
+:root {
+  font-family:
+    "IBM Plex Sans JP",
+    "Noto Sans JP",
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #1f2f3d;
+  background:
+    radial-gradient(circle at top left, rgba(146, 177, 204, 0.28) 0, transparent 30%),
+    radial-gradient(circle at bottom right, rgba(198, 214, 226, 0.36) 0, transparent 34%),
+    linear-gradient(180deg, #edf3f7 0%, #dce7ee 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
+}

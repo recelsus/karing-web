@@ -1,0 +1,135 @@
+.file-lane {
+  margin-top: 28px;
+}
+
+.file-lane-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.file-lane-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-lane-tools {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.file-count {
+  color: #557085;
+  font-size: 0.92rem;
+}
+
+.file-lane-copy {
+  margin: 8px 0 0;
+  color: #557085;
+}
+
+.file-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(39, 70, 93, 0.06);
+  color: #364152;
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-meta strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-details {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  color: #557085;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.file-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-id {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(39, 70, 93, 0.1);
+  color: #70879a;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.file-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(39, 70, 93, 0.1);
+  color: #27465d;
+  text-transform: lowercase;
+}
+
+.file-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(39, 70, 93, 0.18);
+  border-radius: 999px;
+  color: #27465d;
+  background: rgba(250, 252, 254, 0.78);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 0.74rem;
+}
