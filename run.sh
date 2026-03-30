@@ -87,11 +87,7 @@ confirm() {
 }
 
 is_running() {
-  local override_args=()
-  if [ -f "$NETWORK_OVERRIDE_FILE" ]; then
-    override_args=(-f "$NETWORK_OVERRIDE_FILE")
-  fi
-  [ -n "$(PROJECT_ROOT="$ROOT_DIR" docker compose -f "$COMPOSE_FILE" "${override_args[@]}" ps -q 2>/dev/null)" ]
+  docker ps --format '{{.Names}}' | grep -Eq '^(karing|karing-web)$'
 }
 
 write_override_file() {
