@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => {
     (command === 'serve' ? '/' : '/web/');
   const apiBasePath =
     process.env.KARING_WEB_API_BASE ??
-    (command === 'serve' ? '/api' : '');
+    (command === 'serve' ? '/api' : '/web/api');
 
   return {
     base: basePath,
