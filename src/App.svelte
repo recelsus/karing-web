@@ -12,7 +12,7 @@
   const INCLUDE_TEXT_FILES_IN_FILE_AREA = true;
   const FILE_DATE_FIELD: 'created' | 'updated' = 'updated';
 
-  const api_base = import.meta.env.DEV ? '/api' : '';
+  const api_base = __KARING_WEB_API_BASE__;
 
   let text_cards: slot_card_t[] = [];
   let file_cards: slot_card_t[] = [];
