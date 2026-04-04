@@ -4,4 +4,10 @@ dist/
 .DS_Store
 npm-debug.log*
 
+data/
+logs/
+docker/.active-options
+docker/.network.override.yml
+
 karing/
+
