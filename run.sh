@@ -4,13 +4,27 @@ set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="docker/docker-compose.yml"
-BASE_PATH="${KARING_WEB_BASE_PATH:-/web/}"
+ENV_FILE="$ROOT_DIR/docker/karing-web.env"
 NETWORK_NAME=""
 TEST_PORT=""
 NETWORK_OVERRIDE_FILE="$ROOT_DIR/docker/.network.override.yml"
 ACTIVE_OPTIONS_FILE="$ROOT_DIR/docker/.active-options"
 
 cd "$ROOT_DIR"
+
+load_env_file() {
+  if [ -f "$ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+  fi
+}
+
+load_env_file
+
+BASE_PATH="${KARING_WEB_BASE_PATH:-/web/}"
+API_BASE="${KARING_WEB_API_BASE:-}"
 
 load_active_options() {
   if [ -f "$ACTIVE_OPTIONS_FILE" ]; then
@@ -36,7 +50,9 @@ Arguments:
   --test PORT    Publish nginx on 0.0.0.0:PORT for browser testing.
 
 Environment:
+  docker/karing-web.env   Optional environment file loaded automatically.
   KARING_WEB_BASE_PATH   Base path for the frontend build. Default: /web/
+  KARING_WEB_API_BASE    API base path for the frontend build. Default: empty
 EOF
 }
 
@@ -161,7 +177,10 @@ start_stack() {
   mkdir -p "$ROOT_DIR/data" "$ROOT_DIR/logs"
 
   echo "Building frontend for base path: $BASE_PATH"
-  KARING_WEB_BASE_PATH="$BASE_PATH" npm run build
+  echo "Building frontend for API base: ${API_BASE:-<empty>}"
+  KARING_WEB_BASE_PATH="$BASE_PATH" \
+  KARING_WEB_API_BASE="$API_BASE" \
+  npm run build
 
   echo "Starting docker compose..."
   run_compose up -d
