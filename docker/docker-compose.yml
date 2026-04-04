@@ -9,6 +9,8 @@ services:
       KARING_DB_PATH: "/var/lib/karing/karing.sqlite"
       KARING_UPLOAD_PATH: "/var/lib/karing/uploads"
       KARING_LOG_PATH: "/var/log/karing"
+      # If karing is exposed under a subpath such as /karing, enable this.
+      # KARING_BASE_PATH: "/karing"
     volumes:
       - ${PROJECT_ROOT}/data:/var/lib/karing
       - ${PROJECT_ROOT}/logs:/var/log/karing
@@ -21,6 +23,12 @@ services:
       - karing
     expose:
       - "8080"
+    # karing-web is served as static files by nginx, so these are build-time
+    # values rather than runtime container env vars.
+    #
+    # Example values to use when building dist/:
+    # KARING_WEB_BASE_PATH=/web/
+    # KARING_WEB_API_BASE=/karing
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ${PROJECT_ROOT}/dist:/usr/share/nginx/html:ro
