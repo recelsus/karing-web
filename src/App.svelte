@@ -7,10 +7,25 @@
   import ExpandedEditorModal from './components/ExpandedEditorModal.svelte';
   import DeleteConfirmModal from './components/DeleteConfirmModal.svelte';
   import ToastMessage from './components/ToastMessage.svelte';
-  import type { api_record_t, search_response_t, sort_option_t, slot_card_t } from './types';
-
-  const INCLUDE_TEXT_FILES_IN_FILE_AREA = true;
-  const FILE_DATE_FIELD: 'created' | 'updated' = 'updated';
+  import { SEARCH_DEBOUNCE_MS, TOAST_DURATION_MS } from './lib/constants';
+  import { copy_text } from './lib/clipboard';
+  import {
+    create_text_slot,
+    delete_slot_record,
+    fetch_file_limit_bytes,
+    load_slot_records,
+    save_text_slot,
+    swap_slot_records,
+    upload_slot_file
+  } from './lib/karing_api';
+  import {
+    format_timestamp,
+    get_download_href,
+    get_file_badge,
+    get_file_date
+  } from './lib/records';
+  import { toggle_swap_selection } from './lib/swap';
+  import type { sort_option_t, slot_card_t } from './types';
 
   const api_base = __KARING_WEB_API_BASE__;
 
@@ -54,129 +69,23 @@
     toast_timer = setTimeout(() => {
       status_message = '';
       toast_timer = null;
-    }, 3200);
+    }, TOAST_DURATION_MS);
   }
 
-  function is_visible_text_record(record: api_record_t) {
-    if (record.is_file) return false;
-    return (record.content ?? '').trim().length > 0;
-  }
-
-  function to_slot_card(record: api_record_t): slot_card_t {
-    return {
-      ...record,
-      draft: record.content ?? '',
-      saving: false,
-      deleting: false
-    };
-  }
-
-  function normalize(records: api_record_t[]) {
-    text_cards = sort_records(records, sort_option)
-      .filter(is_visible_text_record)
-      .map(to_slot_card);
-    file_cards = sort_records(records, file_sort_option)
-      .filter(is_file_lane_record)
-      .map(to_slot_card);
+  function apply_records(records: {
+    text_cards: slot_card_t[];
+    file_cards: slot_card_t[];
+  }) {
+    text_cards = records.text_cards;
+    file_cards = records.file_cards;
     selected_text_swap_ids = selected_text_swap_ids.filter((id) =>
-      records.some((record) => record.id === id)
+      records.text_cards.some((record) => record.id === id) ||
+      records.file_cards.some((record) => record.id === id)
     );
     selected_file_swap_ids = selected_file_swap_ids.filter((id) =>
-      records.some((record) => record.id === id)
+      records.text_cards.some((record) => record.id === id) ||
+      records.file_cards.some((record) => record.id === id)
     );
-  }
-
-  function is_file_lane_record(record: api_record_t) {
-    if (record.is_file) return true;
-    return INCLUDE_TEXT_FILES_IN_FILE_AREA && Boolean(record.filename);
-  }
-
-  function get_sort_query(option: sort_option_t) {
-    switch (option) {
-      case 'id-asc':
-        return 'sort=id&order=asc';
-      case 'id-desc':
-        return 'sort=id&order=desc';
-      case 'updated-asc':
-        return 'sort=updated_at&order=asc';
-      case 'updated-desc':
-        return 'sort=updated_at&order=desc';
-    }
-  }
-
-  function sort_records(records: api_record_t[], option: sort_option_t) {
-    const sorted = [...records];
-    const get_updated_value = (record: api_record_t) =>
-      record.updated_at ?? record.created_at;
-
-    sorted.sort((left, right) => {
-      switch (option) {
-        case 'id-asc':
-          return left.id - right.id;
-        case 'id-desc':
-          return right.id - left.id;
-        case 'updated-asc':
-          return get_updated_value(left) - get_updated_value(right);
-        case 'updated-desc':
-          return get_updated_value(right) - get_updated_value(left);
-      }
-    });
-
-    return sorted;
-  }
-
-  function format_timestamp(unix_seconds?: number) {
-    if (!unix_seconds) return 'timestamp unavailable';
-
-    return new Intl.DateTimeFormat('en-GB', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(new Date(unix_seconds * 1000));
-  }
-
-  function get_file_badge(record: api_record_t) {
-    if (record.filename?.includes('.')) {
-      const ext = record.filename.split('.').pop()?.trim();
-      if (ext) return `.${ext.toLowerCase()}`;
-    }
-
-    if (record.mime) {
-      const [, subtype = 'file'] = record.mime.split('/');
-      return subtype.replace(/^x-/, '').replace(/\+.*/, '');
-    }
-
-    return 'file';
-  }
-
-  function get_file_date(record: api_record_t) {
-    if (FILE_DATE_FIELD === 'created') return record.created_at;
-    return record.updated_at ?? record.created_at;
-  }
-
-  function get_download_href(record: api_record_t) {
-    return `${api_base}/?id=${record.id}&as=download`;
-  }
-
-  function parse_size_mb_to_bytes(value: string | undefined) {
-    if (!value) return null;
-    const matched = value.trim().match(/^(\d+)\s*MB$/i);
-    if (!matched) return null;
-    return Number(matched[1]) * 1024 * 1024;
-  }
-
-  async function parse_error(response: Response) {
-    try {
-      const json = await response.json();
-      if (json?.message) return json.message as string;
-    } catch {
-      return `request failed: ${response.status}`;
-    }
-
-    return `request failed: ${response.status}`;
   }
 
   async function load_slots() {
@@ -184,76 +93,20 @@
     error_message = '';
 
     try {
-      const query = search_query.trim();
-      const response = await fetch(
-        query
-          ? `${api_base}/search/live?limit=1000&q=${encodeURIComponent(query)}`
-          : `${api_base}/search?limit=1000&${get_sort_query(sort_option)}`,
-        {
-          headers: {
-            Accept: 'application/json'
-          }
-        }
+      apply_records(
+        await load_slot_records(
+          api_base,
+          search_query,
+          sort_option,
+          file_sort_option
+        )
       );
-
-      if (!response.ok) {
-        throw new Error(await parse_error(response));
-      }
-
-      const json = (await response.json()) as search_response_t;
-      const records = query
-        ? await load_records_by_ids((json.data ?? []).map((record) => record.id))
-        : (json.data ?? []);
-
-      normalize(records);
     } catch (error) {
       error_message =
         error instanceof Error ? error.message : 'Failed to load notes.';
     } finally {
       loading = false;
     }
-  }
-
-  async function load_records_by_ids(ids: number[]) {
-    const unique_ids = [...new Set(ids)];
-    const records = await Promise.all(
-      unique_ids.map(async (id) => {
-        const response = await fetch(`${api_base}/?id=${id}&json=true`, {
-          headers: {
-            Accept: 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error(await parse_error(response));
-        }
-
-        const json = (await response.json()) as search_response_t;
-        return json.data?.[0] ?? null;
-      })
-    );
-
-    return records.filter((record): record is api_record_t => record !== null);
-  }
-
-  async function fetch_file_limit_bytes() {
-    const response = await fetch(`${api_base}/health`, {
-      headers: {
-        Accept: 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(await parse_error(response));
-    }
-
-    const json = (await response.json()) as {
-      size?: {
-        file?: string;
-      };
-    };
-
-    return parse_size_mb_to_bytes(json.size?.file);
   }
 
   async function create_slot() {
@@ -268,19 +121,7 @@
     error_message = '';
 
     try {
-      const response = await fetch(`${api_base}/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify({ content })
-      });
-
-      if (!response.ok) {
-        throw new Error(await parse_error(response));
-      }
-
+      await create_text_slot(api_base, content);
       new_content = '';
       show_composer = false;
       show_toast('New note added.');
@@ -307,19 +148,7 @@
     error_message = '';
 
     try {
-      const response = await fetch(`${api_base}/?id=${slot.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify({ content })
-      });
-
-      if (!response.ok) {
-        throw new Error(await parse_error(response));
-      }
-
+      await save_text_slot(api_base, slot.id, content);
       show_toast(`ID ${slot.id} saved.`);
       await load_slots();
     } catch (error) {
@@ -336,14 +165,7 @@
     error_message = '';
 
     try {
-      const response = await fetch(`${api_base}/?id=${slot.id}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok && response.status !== 204) {
-        throw new Error(await parse_error(response));
-      }
-
+      await delete_slot_record(api_base, slot.id);
       show_toast(`ID ${slot.id} deleted.`);
       text_cards = text_cards.filter((item) => item.id !== slot.id);
       file_cards = file_cards.filter((item) => item.id !== slot.id);
@@ -365,41 +187,12 @@
 
   function toggle_text_swap_selection(id: number) {
     selected_file_swap_ids = [];
-
-    if (selected_text_swap_ids.includes(id)) {
-      selected_text_swap_ids = selected_text_swap_ids.filter((item) => item !== id);
-      return;
-    }
-
-    if (selected_text_swap_ids.length < 2) {
-      selected_text_swap_ids = [...selected_text_swap_ids, id];
-      return;
-    }
-
-    selected_text_swap_ids = [selected_text_swap_ids[1], id];
+    selected_text_swap_ids = toggle_swap_selection(selected_text_swap_ids, id);
   }
 
   function toggle_file_swap_selection(id: number) {
     selected_text_swap_ids = [];
-
-    if (selected_file_swap_ids.includes(id)) {
-      selected_file_swap_ids = selected_file_swap_ids.filter((item) => item !== id);
-      return;
-    }
-
-    if (selected_file_swap_ids.length < 2) {
-      selected_file_swap_ids = [...selected_file_swap_ids, id];
-      return;
-    }
-
-    selected_file_swap_ids = [selected_file_swap_ids[1], id];
-  }
-
-  function is_file_swap_second(id: number) {
-    return (
-      selected_file_swap_ids.length === 2 &&
-      selected_file_swap_ids[1] === id
-    );
+    selected_file_swap_ids = toggle_swap_selection(selected_file_swap_ids, id);
   }
 
   async function swap_selected(mode: 'text' | 'file') {
@@ -410,17 +203,7 @@
 
     const [id_1, id_2] = selected_ids;
     try {
-      const response = await fetch(`${api_base}/swap?id1=${id_1}&id2=${id_2}`, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(await parse_error(response));
-      }
-
+      await swap_slot_records(api_base, id_1, id_2);
       selected_text_swap_ids = [];
       selected_file_swap_ids = [];
       show_toast(`IDs ${id_1} and ${id_2} swapped.`);
@@ -446,28 +229,6 @@
     }
   }
 
-  async function copy_text(value: string) {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return;
-    }
-
-    const textarea = document.createElement('textarea');
-    textarea.value = value;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-
-    const ok = document.execCommand('copy');
-    document.body.removeChild(textarea);
-
-    if (!ok) {
-      throw new Error('copy failed');
-    }
-  }
-
   function close_composer() {
     show_composer = false;
     new_content = '';
@@ -490,7 +251,7 @@
     if (!file) return;
 
     try {
-      const file_limit_bytes = await fetch_file_limit_bytes();
+      const file_limit_bytes = await fetch_file_limit_bytes(api_base);
       if (file_limit_bytes !== null && file.size > file_limit_bytes) {
         show_toast('File exceeds the current upload limit.', 'error');
         return;
@@ -512,47 +273,9 @@
     error_message = '';
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        const form_data = new FormData();
-        form_data.append('file', file);
-        form_data.append('filename', file.name);
-        form_data.append('mime', file.type || 'application/octet-stream');
-
-        const request = new XMLHttpRequest();
-        request.open('POST', `${api_base}/`);
-        request.setRequestHeader('Accept', 'application/json');
-
-        request.upload.addEventListener('progress', (progress_event) => {
-          if (!progress_event.lengthComputable) return;
-          upload_progress = Math.round(
-            (progress_event.loaded / progress_event.total) * 100
-          );
-        });
-
-        request.addEventListener('load', async () => {
-          if (request.status >= 200 && request.status < 300) {
-            upload_progress = 100;
-            resolve();
-            return;
-          }
-
-          let message = `request failed: ${request.status}`;
-          try {
-            const parsed = JSON.parse(request.responseText) as { message?: string };
-            if (parsed.message) message = parsed.message;
-          } catch {
-            // keep fallback message
-          }
-          reject(new Error(message));
-        });
-
-        request.addEventListener('error', () => {
-          reject(new Error('Upload failed.'));
-        });
-
-        request.send(form_data);
+      await upload_slot_file(api_base, file, (progress) => {
+        upload_progress = progress;
       });
-
       show_toast('File uploaded.');
       await load_slots();
     } catch (error) {
@@ -570,7 +293,7 @@
     if (search_timer) clearTimeout(search_timer);
     search_timer = setTimeout(() => {
       load_slots();
-    }, 220);
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   onMount(load_slots);
@@ -632,7 +355,7 @@
     format_timestamp={format_timestamp}
     get_file_badge={get_file_badge}
     get_file_date={get_file_date}
-    get_download_href={get_download_href}
+    get_download_href={(record) => get_download_href(api_base, record)}
     on_sort_change={load_slots}
     on_delete={request_delete}
     selected_swap_ids={selected_file_swap_ids}
