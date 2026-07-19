@@ -9,6 +9,7 @@ NETWORK_NAME=""
 TEST_PORT=""
 NETWORK_OVERRIDE_FILE="$ROOT_DIR/docker/.network.override.yml"
 ACTIVE_OPTIONS_FILE="$ROOT_DIR/docker/.active-options"
+ARG_COUNT=$#
 
 cd "$ROOT_DIR"
 
@@ -55,8 +56,6 @@ Environment:
   KARING_WEB_API_BASE    API base path for the frontend build. Default: empty
 EOF
 }
-
-load_active_options
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -204,6 +203,9 @@ stop_stack() {
 }
 
 if is_running; then
+  if [ "$ARG_COUNT" -eq 0 ]; then
+    load_active_options
+  fi
   stop_stack
 else
   start_stack
