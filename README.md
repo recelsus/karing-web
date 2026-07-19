@@ -25,3 +25,12 @@ In `--test` mode:
 
 - `http://0.0.0.0:<port>/` serves `karing`
 - `http://0.0.0.0:<port>/web/` serves `karing-web`
+
+## License
+
+Karing Web is licensed under the MIT License. See `LICENSE`.
+
+## Third-Party Notices
+
+Third-party dependency and tooling notices are listed in
+`THIRD_PARTY_NOTICES.md`.
