@@ -9,10 +9,12 @@
   export let get_download_href: (record: slot_card_t) => string;
   export let on_sort_change: () => void;
   export let on_delete: (slot: slot_card_t) => void;
-  export let selected_swap_ids: number[] = [];
-  export let on_toggle_swap: (id: number) => void;
-  export let swap_ready = false;
-  export let on_swap: () => void;
+  export let dragging_id: number | null = null;
+  export let drag_over_id: number | null = null;
+  export let on_drag_start: (id: number, event: DragEvent) => void;
+  export let on_drag_over: (id: number, event: DragEvent) => void;
+  export let on_drop: (id: number, event: DragEvent) => void;
+  export let on_drag_end: () => void;
   export let on_open_upload: () => void;
   export let upload_in_progress = false;
   export let upload_progress = 0;
@@ -41,20 +43,6 @@
           />
         </svg>
       </button>
-      {#if swap_ready}
-        <button type="button" class="swap-button" on:click={on_swap} title="swap">
-          <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M7 7h11M14 4l4 3-4 3M17 17H6M10 14l-4 3 4 3"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.8"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
-      {/if}
     </div>
     <div class="file-lane-tools">
       <label class="sort-control">
@@ -75,16 +63,18 @@
   {#if file_cards.length > 0}
     <div class="file-list">
       {#each file_cards as file}
-        <article class="file-row">
+        <article
+          class="file-row"
+          class:dragging={dragging_id === file.id}
+          class:drop-target={drag_over_id === file.id && dragging_id !== file.id}
+          draggable
+          on:dragstart={(event) => on_drag_start(file.id, event)}
+          on:dragover={(event) => on_drag_over(file.id, event)}
+          on:drop={(event) => on_drop(file.id, event)}
+          on:dragend={on_drag_end}
+        >
           <div class="file-meta">
-            <button
-              type="button"
-              class:selected-swap={selected_swap_ids.includes(file.id)}
-              class="file-id"
-              on:click={() => on_toggle_swap(file.id)}
-            >
-              id {file.id}
-            </button>
+            <span class="file-id">id {file.id}</span>
             <strong>{file.filename ?? `id ${file.id}`}</strong>
           </div>
           <div class="file-actions">

@@ -9,13 +9,15 @@
   import ToastMessage from './components/ToastMessage.svelte';
   import { SEARCH_DEBOUNCE_MS, TOAST_DURATION_MS } from './lib/constants';
   import { copy_text } from './lib/clipboard';
+  import { error_message as to_error_message } from './lib/errors';
+  import { exceeds_file_limit, selected_file_from_event } from './lib/files';
   import {
     create_text_slot,
     delete_slot_record,
     fetch_file_limit_bytes,
     load_slot_records,
+    move_slot_record,
     save_text_slot,
-    swap_slot_records,
     upload_slot_file
   } from './lib/karing_api';
   import {
@@ -24,7 +26,14 @@
     get_file_badge,
     get_file_date
   } from './lib/records';
-  import { toggle_swap_selection } from './lib/swap';
+  import {
+    can_move_before,
+    empty_move_state,
+    hover_move_target,
+    start_move,
+    type move_lane_t,
+    type move_state_t
+  } from './lib/move';
   import type { sort_option_t, slot_card_t } from './types';
 
   const api_base = __KARING_WEB_API_BASE__;
@@ -41,10 +50,7 @@
   let new_content = '';
   let expanded_card: slot_card_t | null = null;
   let pending_delete_card: slot_card_t | null = null;
-  let selected_text_swap_ids: number[] = [];
-  let selected_file_swap_ids: number[] = [];
-  let text_swap_target_id: number | null = null;
-  let file_swap_ready = false;
+  let move_state: move_state_t = empty_move_state;
   let file_input: HTMLInputElement | null = null;
   let upload_in_progress = false;
   let upload_progress = 0;
@@ -58,10 +64,6 @@
     expanded_card_id === null
       ? null
       : text_cards.find((card) => card.id === expanded_card_id) ?? null;
-  $: text_swap_target_id =
-    selected_text_swap_ids.length === 2 ? selected_text_swap_ids[1] : null;
-  $: file_swap_ready = selected_file_swap_ids.length === 2;
-
   function show_toast(message: string, kind: 'status' | 'error' = 'status') {
     toast_kind = kind;
     status_message = message;
@@ -78,14 +80,6 @@
   }) {
     text_cards = records.text_cards;
     file_cards = records.file_cards;
-    selected_text_swap_ids = selected_text_swap_ids.filter((id) =>
-      records.text_cards.some((record) => record.id === id) ||
-      records.file_cards.some((record) => record.id === id)
-    );
-    selected_file_swap_ids = selected_file_swap_ids.filter((id) =>
-      records.text_cards.some((record) => record.id === id) ||
-      records.file_cards.some((record) => record.id === id)
-    );
   }
 
   async function load_slots() {
@@ -102,8 +96,7 @@
         )
       );
     } catch (error) {
-      error_message =
-        error instanceof Error ? error.message : 'Failed to load notes.';
+      error_message = to_error_message(error, 'Failed to load notes.');
     } finally {
       loading = false;
     }
@@ -127,8 +120,7 @@
       show_toast('New note added.');
       await load_slots();
     } catch (error) {
-      error_message =
-        error instanceof Error ? error.message : 'Failed to add note.';
+      error_message = to_error_message(error, 'Failed to add note.');
     } finally {
       creating = false;
     }
@@ -152,8 +144,7 @@
       show_toast(`ID ${slot.id} saved.`);
       await load_slots();
     } catch (error) {
-      error_message =
-        error instanceof Error ? error.message : `Failed to save ID ${slot.id}.`;
+      error_message = to_error_message(error, `Failed to save ID ${slot.id}.`);
     } finally {
       slot.saving = false;
     }
@@ -169,12 +160,9 @@
       show_toast(`ID ${slot.id} deleted.`);
       text_cards = text_cards.filter((item) => item.id !== slot.id);
       file_cards = file_cards.filter((item) => item.id !== slot.id);
-      selected_text_swap_ids = selected_text_swap_ids.filter((id) => id !== slot.id);
-      selected_file_swap_ids = selected_file_swap_ids.filter((id) => id !== slot.id);
       if (expanded_card_id === slot.id) expanded_card_id = null;
     } catch (error) {
-      error_message =
-        error instanceof Error ? error.message : `Failed to delete ID ${slot.id}.`;
+      error_message = to_error_message(error, `Failed to delete ID ${slot.id}.`);
     } finally {
       slot.deleting = false;
       pending_delete_card = null;
@@ -185,34 +173,56 @@
     pending_delete_card = slot;
   }
 
-  function toggle_text_swap_selection(id: number) {
-    selected_file_swap_ids = [];
-    selected_text_swap_ids = toggle_swap_selection(selected_text_swap_ids, id);
+  function begin_move(
+    lane: move_lane_t,
+    id: number,
+    event: DragEvent
+  ) {
+    move_state = start_move(lane, id);
+    event.dataTransfer?.setData('text/plain', String(id));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
-  function toggle_file_swap_selection(id: number) {
-    selected_text_swap_ids = [];
-    selected_file_swap_ids = toggle_swap_selection(selected_file_swap_ids, id);
+  function allow_move_before(
+    lane: move_lane_t,
+    before_id: number,
+    event: DragEvent
+  ) {
+    if (!can_move_before(move_state, lane, before_id)) {
+      return;
+    }
+    event.preventDefault();
+    move_state = hover_move_target(move_state, lane, before_id);
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
-  async function swap_selected(mode: 'text' | 'file') {
-    const selected_ids =
-      mode === 'text' ? selected_text_swap_ids : selected_file_swap_ids;
+  function finish_move() {
+    move_state = empty_move_state;
+  }
 
-    if (selected_ids.length !== 2) return;
+  async function move_before(
+    lane: move_lane_t,
+    before_id: number,
+    event: DragEvent
+  ) {
+    event.preventDefault();
+    if (!can_move_before(move_state, lane, before_id)) {
+      finish_move();
+      return;
+    }
 
-    const [id_1, id_2] = selected_ids;
+    const id = move_state.dragging_id;
+    if (id === null) return;
     try {
-      await swap_slot_records(api_base, id_1, id_2);
-      selected_text_swap_ids = [];
-      selected_file_swap_ids = [];
-      show_toast(`IDs ${id_1} and ${id_2} swapped.`);
+      await move_slot_record(api_base, id, before_id);
+      if (lane === 'text') sort_option = 'id-asc';
+      if (lane === 'file') file_sort_option = 'id-asc';
+      show_toast(`ID ${id} moved.`);
       await load_slots();
     } catch (error) {
-      show_toast(
-        error instanceof Error ? error.message : 'Failed to swap IDs.',
-        'error'
-      );
+      show_toast(to_error_message(error, 'Failed to move ID.'), 'error');
+    } finally {
+      finish_move();
     }
   }
 
@@ -244,23 +254,18 @@
   }
 
   async function handle_file_input_change(event: Event) {
-    const target = event.currentTarget as HTMLInputElement;
-    const file = target.files?.[0];
-    target.value = '';
+    const file = selected_file_from_event(event);
 
     if (!file) return;
 
     try {
       const file_limit_bytes = await fetch_file_limit_bytes(api_base);
-      if (file_limit_bytes !== null && file.size > file_limit_bytes) {
+      if (exceeds_file_limit(file, file_limit_bytes)) {
         show_toast('File exceeds the current upload limit.', 'error');
         return;
       }
     } catch (error) {
-      show_toast(
-        error instanceof Error ? error.message : 'Failed to read upload limit.',
-        'error'
-      );
+      show_toast(to_error_message(error, 'Failed to read upload limit.'), 'error');
       return;
     }
 
@@ -279,10 +284,7 @@
       show_toast('File uploaded.');
       await load_slots();
     } catch (error) {
-      show_toast(
-        error instanceof Error ? error.message : 'Upload failed.',
-        'error'
-      );
+      show_toast(to_error_message(error, 'Upload failed.'), 'error');
     } finally {
       upload_in_progress = false;
       upload_progress = 0;
@@ -339,10 +341,12 @@
     on_save={save_slot}
     on_delete={request_delete}
     on_copy={copy_slot_text}
-    selected_swap_ids={selected_text_swap_ids}
-    on_toggle_swap={toggle_text_swap_selection}
-    swap_target_id={text_swap_target_id}
-    on_swap={() => swap_selected('text')}
+    dragging_id={move_state.dragging_lane === 'text' ? move_state.dragging_id : null}
+    drag_over_id={move_state.drag_over_id}
+    on_drag_start={(id, event) => begin_move('text', id, event)}
+    on_drag_over={(id, event) => allow_move_before('text', id, event)}
+    on_drop={(id, event) => move_before('text', id, event)}
+    on_drag_end={finish_move}
     on_expand={(slot) => {
       expanded_card_id = slot.id;
       status_message = '';
@@ -358,10 +362,12 @@
     get_download_href={(record) => get_download_href(api_base, record)}
     on_sort_change={load_slots}
     on_delete={request_delete}
-    selected_swap_ids={selected_file_swap_ids}
-    on_toggle_swap={toggle_file_swap_selection}
-    swap_ready={file_swap_ready}
-    on_swap={() => swap_selected('file')}
+    dragging_id={move_state.dragging_lane === 'file' ? move_state.dragging_id : null}
+    drag_over_id={move_state.drag_over_id}
+    on_drag_start={(id, event) => begin_move('file', id, event)}
+    on_drag_over={(id, event) => allow_move_before('file', id, event)}
+    on_drop={(id, event) => move_before('file', id, event)}
+    on_drag_end={finish_move}
     on_open_upload={open_upload_picker}
     {upload_in_progress}
     {upload_progress}

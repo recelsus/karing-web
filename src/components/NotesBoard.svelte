@@ -10,10 +10,12 @@
   export let on_delete: (slot: slot_card_t) => void;
   export let on_copy: (slot: slot_card_t) => void;
   export let on_expand: (slot: slot_card_t) => void;
-  export let selected_swap_ids: number[] = [];
-  export let on_toggle_swap: (id: number) => void;
-  export let swap_target_id: number | null = null;
-  export let on_swap: () => void;
+  export let dragging_id: number | null = null;
+  export let drag_over_id: number | null = null;
+  export let on_drag_start: (id: number, event: DragEvent) => void;
+  export let on_drag_over: (id: number, event: DragEvent) => void;
+  export let on_drop: (id: number, event: DragEvent) => void;
+  export let on_drag_end: () => void;
 </script>
 
 <section class="board-header">
@@ -42,7 +44,16 @@
     </article>
   {:else}
     {#each text_cards as slot}
-      <article class="card">
+      <article
+        class="card"
+        class:dragging={dragging_id === slot.id}
+        class:drop-target={drag_over_id === slot.id && dragging_id !== slot.id}
+        draggable={!slot.saving && !slot.deleting}
+        on:dragstart={(event) => on_drag_start(slot.id, event)}
+        on:dragover={(event) => on_drag_over(slot.id, event)}
+        on:drop={(event) => on_drop(slot.id, event)}
+        on:dragend={on_drag_end}
+      >
         <header>
           {#if slot.filename}
             <h2>{slot.filename}</h2>
@@ -113,30 +124,7 @@
 
         <footer>
           <span>{format_timestamp(slot.updated_at ?? slot.created_at)}</span>
-          <div class="swap-controls">
-            {#if swap_target_id === slot.id}
-              <button type="button" class="swap-button" on:click={on_swap} title="swap">
-                <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M7 7h11M14 4l4 3-4 3M17 17H6M10 14l-4 3 4 3"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </button>
-            {/if}
-            <button
-              type="button"
-              class:selected-swap={selected_swap_ids.includes(slot.id)}
-              class="floating-id"
-              on:click={() => on_toggle_swap(slot.id)}
-            >
-              id {slot.id}
-            </button>
-          </div>
+          <span class="floating-id">id {slot.id}</span>
         </footer>
       </article>
     {/each}

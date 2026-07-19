@@ -51,6 +51,18 @@
   color: #364152;
 }
 
+.file-row[draggable='true'] {
+  cursor: grab;
+}
+
+.file-row.dragging {
+  opacity: 0.56;
+}
+
+.file-row.drop-target {
+  box-shadow: inset 0 3px 0 rgba(45, 103, 151, 0.58);
+}
+
 .file-meta {
   display: flex;
   align-items: center;

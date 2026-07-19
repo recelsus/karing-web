@@ -118,12 +118,12 @@ export async function delete_slot_record(api_base: string, id: number) {
   }
 }
 
-export async function swap_slot_records(
+export async function move_slot_record(
   api_base: string,
-  id_1: number,
-  id_2: number
+  id: number,
+  before_id: number
 ) {
-  const response = await fetch(`${api_base}/swap?id1=${id_1}&id2=${id_2}`, {
+  const response = await fetch(`${api_base}/move?id=${id}&before=${before_id}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json'

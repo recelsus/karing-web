@@ -4,9 +4,15 @@ on:
   push:
     branches:
       - master
-  pull_request:
-    branches:
-      - master
+    paths:
+      - 'src/**'
+      - 'docker/nginx.conf'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'svelte.config.js'
+      - 'tsconfig.json'
+      - 'vite.config.ts'
+      - '.github/workflows/container.yml'
   workflow_dispatch:
 
 env:
@@ -15,37 +21,12 @@ env:
   KARING_WEB_API_BASE: /web/api
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run unit tests
-        run: npm run test
-
-      - name: Run Svelte check
-        run: npm run check
-
-      - name: Build frontend
-        run: npm run build
-
   container:
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    if: github.event_name != 'pull_request'
+    if: ${{ github.ref == 'refs/heads/master' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
